@@ -1,0 +1,240 @@
+<?php
+/**
+ * UL GuestBook
+ *
+ * By Richard Ye <http://www.yerich.net/>
+ *
+ * UL Guestbook (UltraLight Guestbook) is the simpliest guestbook script ever made.
+ * You don't need a database or any fancy libraries - you just need PHP 4 or 5. All of the
+ * functions are stored on one file, and all of the data is stored on one automatically-generated
+ * text file.
+ *
+ * For more information, go to http://www.yerich.net/projects/ulguestbook/
+ *
+ * Version 1.0 - August 15, 2010
+ *
+ * The MIT License
+ *
+ * Copyright (c) 2010 Richard Ye (http://www.yerich.net/)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+$_ul_cfg['entriesPerPage'] = 10;	//Number of entries per page
+$_ul_cfg['dateFormat'] = "F d, Y g:iA";	//Time format displayed, following PHP's time() formatting
+$_ul_cfg['requireEmails'] = false;	//Require emails to post an entry
+$_ul_cfg['securityQuestion'] = "Is fire hot or cold?";	//Anti-spam security question
+$_ul_cfg['securityAnswer'] = "hot";	//Anti-spam security answer
+$_ul_cfg['legendText'] = "Post a new Guestbook Entry";	//The text labelling the form
+$_ul_cfg['dataFile'] = "ulguestbook_data.txt";	//The location of the data file. Make sure that PHP can write to it.
+
+//Making this false will turn off the automatic call of ul_printGuestbookForm() after ul_printGuestbook()
+//Meaning that you'll have to manually call it somewhere else.
+$_ul_cfg['autoOutputForm'] = true;
+$_ul_cfg['disableSubmissions'] = false;	//Setting this to true will disable all new submissions
+
+/**
+ * ul_printGuestbookForm
+ *
+ * Prints out the guestbook form, in HTML. This function is called automatically if
+ * $_ul_cfg['autoOutputForm'] = true. You can disable that and print the form out
+ * manually at the location of your choice by calling this function.
+ */
+function ul_printGuestbookForm(){
+	global $_ul_message, $_ul_error, $_ul_cfg, $_ul_form_old;
+	if($_ul_message)
+		echo "<div class=\"ulguestbook_message\">".implode("<br />",$_ul_message)."</div>";
+	if($_ul_error)
+		echo "<div class=\"ulguestbook_error\">".implode("<br />",$_ul_error)."</div>";
+
+
+	echo "<div class=\"ulguestbook_form_wrapper\">";
+	if($_ul_cfg['disableSubmissions']) {
+		echo "The submission form has been disabled.</div>";
+		return;
+	}
+	echo "<form method=\"post\" action=\"?\" class=\"ulguestbook_form\">";
+	echo "<fieldset class=\"ulguestbook_fieldset\"><legend>".$_ul_cfg['legendText']."</legend><table><tr>";
+
+	echo "<td><label for=\"ulguestbook_input_author\" class=\"ulguestbook_label_author\">Your name:</label></td>";
+	echo "<td><input type=\"text\" id=\"ulguestbook_input_author\" size=\"20\" name=\"gb_author\" value=\"{$_ul_form_old['gb_author']}\" /></td></tr>";
+
+	echo "<tr><td><label for=\"ulguestbook_input_email\" class=\"ulguestbook_label_email\">Your email";
+	if($_ul_cfg['requireEmails'] == false)
+		echo " <em>(optional)</em>";
+	echo ":</label></td><td><input type=\"text\" id=\"ulguestbook_input_email\" size=\"20\" name=\"gb_email\""
+ 		." value=\"{$_ul_form_old['gb_email']}\" /></td></tr>";
+
+	echo "<tr><td><label for=\"ulguestbook_input_contents\" class=\"ulguestbook_label_contents\">Message contents:</label></td>";
+	echo "<td><textarea id=\"ulguestbook_input_contents\" rows=\"6\" cols=\"40\" name=\"gb_contents\">{$_ul_form_old['gb_contents']}</textarea></td></tr>";
+
+	echo "<tr><td><label for=\"ulguestbook_input_antispam\" class=\"ulguestbook_label_antispam\">Anti-spam question:</label></td>";
+	echo "<td>{$_ul_cfg['securityQuestion']}<br />"
+		."<input type=\"text\" id=\"ulguestbook_input_antispam\" size=\"20\" name=\"gb_antispam\" value=\"{$_ul_form_old['gb_antispam']}\" /></td></tr>";
+
+	echo "</table><input type=\"hidden\" name=\"action\" value=\"ulguestbook_submit\" />";
+
+	echo "<input type=\"submit\" value=\"Submit\" class=\"ulguestbook_form_submit\" /></fieldset></form>";
+}
+
+/**
+ * ul_printGuestbookForm
+ *
+ * Prints out the guestbook. Several configuration values can be found at the
+ * top of this file. Call this function wherever you want the guestbook to be outputted.
+ *
+ * @param $supress_output bool If this is set to true, nothing will be outputted. Instead, the file will be parsed and
+ * the results returned as an array containing the data.
+ * @return mixed An array if $supress_output is true, false if no entries found (or error), and null otherwise.
+ */
+function ul_printGuestbook($supress_output = false){
+	global $_ul_cfg;
+
+	//Open up the data file
+	$file = @file_get_contents($_ul_cfg['dataFile']);
+	$file = explode("\n", $file);
+
+	$lastline;
+	for($lastline = count($file); (!$file[$lastline] && $lastline > 0); $lastline--);
+
+	$entries = array();
+	$page = intval($_GET['ulgb_page']);
+	if(!$page || $page < 1)
+		$page = 1;
+	$i = $lastline - ($page - 1) * $_ul_cfg['entriesPerPage'];
+	$last = $i - $_ul_cfg['entriesPerPage'];
+
+	//Start reading the data file, at an offset determined by $_GET['page']
+	for($i; $i > $last; $i--) {
+		if($file[$i] && trim($file[$i]) != "")
+			$entries[] = explode(",", $file[$i], 4);
+	}
+	if($file[$i] != "")
+		$more = true;
+
+	if(!is_array($entries) || count($entries) == 0) {	//See if we got any entries to display
+		if(!$supress_output)
+			echo "There are no guestbook entires to display.";
+		return false;
+	}
+
+	if($supress_output)
+		return $entries;
+
+	//Start the guestbook output
+	echo "<div class=\"ulguestbook_wrapper\">";
+	$i = 0;
+	foreach($entries as $value) {	//Loop through each entry
+		$i = ($i + 1) % 2;
+		$class = "ulguestbook_odd";	//Determine the class of the entry
+		if($i == 0)
+			$class = "ulguestbook_even";
+
+		echo "<div class=\"ulguestbook_entry $class\">";
+		echo "<div class=\"ulguestbook_header\"><span class=\"ulguestbook_author\">".$value[1]."";
+		if($value[2])
+			echo " <span class=\"ulguestbook_email\">&lt;<a href=\"mailto:{$value[2]}\">".$value[2]."</a>&gt;</span>";
+		echo "</span>\n";
+		echo "<span class=\"ulguestbook_date\">".date($_ul_cfg['dateFormat'], $value[0])."</span></div>";
+		$value[3] = str_replace(array("\\n", "\\r"), array("\n", "\r"), $value[3]);
+		$value[3] = nl2br($value[3]);
+		echo "<div class=\"ulguestbook_contents\">".$value[3]."</div></div>\n";
+	}
+
+	if($more || $page > 1) {	//Output pagination links
+		echo "<div class=\"ulguestbook_pagination\">";
+		if($page > 1)
+			echo "<span class=\"ulguestbook_prevpage\"><a href=\"?ulgb_page=".($page-1)."\">&laquo; Previous Page</a></span>\n";
+		if($more)
+			echo "<span class=\"ulguestbook_nextpage\"><a href=\"?ulgb_page=".($page+1)."\">Next Page &raquo;</a></span>\n";
+		echo "</div>\n";
+	}
+
+	echo "</div>";
+
+	if($_ul_cfg['autoOutputForm'])
+		ul_printGuestbookForm();
+}
+
+/**
+ * ul_addGuestbookEntry
+ *
+ * Writes a new guestbook entry to the data file.
+ *
+ * @param $author string
+ * @param $emails string
+ * @param $contents string
+ * @return bool true on success, false on failure
+ */
+function ul_addGuestbookEntry($author, $email, $contents){
+	global $_ul_cfg;
+	$author = str_replace(array("\n", "\r", ","), "", $author);
+	$email = str_replace(array("\n", "\r", ","), "", $email);
+	$contents = str_replace(array("\n", "\r"), array("\\n", "\\r"), $contents);
+	$string = time().",".$author.",".$email.",".$contents."\n";
+
+	$file = @fopen($_ul_cfg['dataFile'], "a");
+	if(!@fwrite($file, $string))
+		return false;
+	@fclose($file);
+	return true;
+}
+
+if($_POST['action'] == "ulguestbook_submit") {
+	global $_ul_message, $_ul_error, $_ul_cfg, $_ul_form_old;
+
+	if($_ul_cfg['disableSubmissions']) {
+		return false;
+	}
+
+	if(!$_POST['gb_author']) {
+		$_ul_error[] = "You must enter your name.";
+		$locked = true;
+	}
+	if((!$_POST['gb_email'] && $_ul_cfg['requireEmails'] != false) || (!filter_var($_POST['email'], FILTER_VALIDATE_EMAIL) && $_POST['email']!="")) {
+		$_ul_error[] = "Please provide a valid email address.";
+		$locked = true;
+	}
+	if(!$_POST['gb_contents']) {
+		$_ul_error[] = "Please put something in the message field.";
+		$locked = true;
+	}
+	if(!$_POST['gb_antispam'] || strtolower($_POST['gb_antispam']) != strtolower($_ul_cfg['securityAnswer'])) {
+		$_ul_error[] = "Your anti-spam answer is incorrect. (hint: the answer is \"{$_ul_cfg['securityAnswer']}\")";
+		$locked = true;
+	}
+
+	if($locked != true) {
+		if (ul_addGuestbookEntry($_POST['gb_author'], $_POST['gb_email'], $_POST['gb_contents'])) {
+			$_ul_message[] = "Thank you for posting your message. It has been added to the guestbook successfully.";
+		}
+		else {
+			$_ul_error[] = "Sorry, we encountered an error adding your message.";
+		}
+	}
+	else {
+		$_ul_form_old = $_POST;
+	}
+}
+
+//Create the data file if it does not exist.
+if(!file_exists($_ul_cfg['dataFile'])) {
+	@touch($_ul_cfg['dataFile']);
+	@chmod($_ul_cfg['dataFile'], 0777);
+}
